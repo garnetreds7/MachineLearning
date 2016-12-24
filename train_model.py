@@ -1,9 +1,10 @@
 # -*- coding:utf-8 -*-
-
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+import matplotlib.pylab as plt
 from sklearn.utils import shuffle
+from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import StratifiedShuffleSplit
 from xgboost.sklearn import XGBClassifier
 
@@ -16,12 +17,36 @@ def read_data():
     return train_data, cv_data
     
 @timer
-def model_fit(estimator,x,y,use_train_cv=True,cv=5,early_stopping_rounds=50):
+def model_fit(estimator,X,y,use_train_cv=True,cv=5,early_stopping_rounds=50):
     if use_train_cv:
         xgb_params = estimator.get_xgb_params()
-        train_data = xgb.DMatrix(data=x,
+        train_data = xgb.DMatrix(data=X,
                                  label=y)
-        return type(train_data),xgb_params
+        cv_result = xgb.cv(xgb_params,
+                           train_data,
+                           num_boost_round=xgb_params['n_estimators'],
+                           nfold=cv,
+                           early_stopping_rounds=early_stopping_rounds,
+                           metrics='auc',
+                           show_progress=False)
+        estimator.set_params(n_estimators=cv_result.shape[0])
+    # 训练模型
+    estimator.fit(X,y,eval_metric='auc')
+    # 模型预测结果
+    pred = estimator.predict(X)
+    pred_prob = estimator.predict_proba(X)[:,1]
+    # 打印模型信息
+    print "Accuracy: %f." % accuracy_score(y,pred)
+    print "AUC Score(Train): %f." % roc_auc_score(y,pred_prob)
+    '''
+    # 特征贡献排名
+    feature_importance = pd.Series(estimator.booster().get_fscore()).sort_values(ascending=False)
+    feature_importance.plot(kind='bar', title='Feature Importances')
+    plt.ylabel('Feature Importance Score')
+    print feature_importance
+    '''
+
+    
         
     
     
@@ -51,5 +76,20 @@ for index in index_list:
     # 分离特征和标签
     t_x = t_data.iloc[:,3:]
     t_y = t_data.iloc[:,2]
-    print model_fit(XGBClassifier(),t_x,t_y)
+    xgb_clf = XGBClassifier(learning_rate=0.1,
+                            max_depth=5,
+                            min_child_weight=1,
+                            gamma=0,
+                            subsample=0.8,
+                            colsample_bytree=0.8,
+                            scale_pos_weight=1,
+                            objective='binary:logistic'
+                            )
+    print xgb_clf.get_xgb_params()
+    model_fit(xgb_clf,t_x,t_y)
+    print xgb_clf.get_xgb_params()
+    xgb_clf1 = XGBClassifier()
+    print xgb_clf1.get_xgb_params()
+    xgb_clf1 = xgb_clf1.set_params(**xgb_clf.get_xgb_params())
+    print xgb_clf1.get_xgb_params()
     break
